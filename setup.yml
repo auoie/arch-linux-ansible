@@ -1,0 +1,237 @@
+- name: prepare mounts
+  hosts: vms
+  vars:
+    fsroot: /mnt
+  tasks:
+    - name: create partitions
+      include_role:
+        name: partitions
+    - name: setup partitions
+      include_role:
+        name: prepare
+    # https://blog.bofh.it/debian/id_462
+    - name: Create the chroot wrapper
+      copy:
+        dest: "/usr/local/sbin/chroot_{{inventory_hostname_short}}"
+        mode: 0755
+        content: |
+          #!/bin/sh -e
+          exec arch-chroot {{fsroot}} /usr/bin/python3 "$@"
+- name: setup environment
+  hosts: vms
+  vars:
+    ansible_python_interpreter: /usr/local/sbin/chroot_{{inventory_hostname_short}}
+    inside_vm: True
+    xsession_content: |
+        spice-vdagent
+        xset r rate 250 25
+        xrandr --output Virtual-1 --auto
+    include:
+      nvidia_graphics: False
+      intel_graphics: True
+      gui: True
+    packages:
+      essential:
+        [
+          linux-lts,
+          amd-ucode,
+          intel-ucode,
+          lvm2,
+          vim,
+          neovim,
+          networkmanager,
+          man-db,
+          man-pages,
+          texinfo,
+          which,
+          openssh,
+          sudo,
+          grub,
+          efibootmgr,
+          os-prober,
+          bash-completion,
+          zsh,
+          zsh-completions,
+          grml-zsh-config,
+          git,
+          archlinux-keyring,
+        ]
+      useful:
+        [
+          fastfetch,
+          ranger,
+          tree,
+          diskus,
+          ripgrep,
+          fd,
+          duf,
+          htop,
+          iftop,
+          lsof,
+          strace,
+        ]
+      network:
+        [wget, whois, bind, traceroute, inetutils, nmap, gnu-netcat, tcpdump]
+      nvidia: [nvtop, cuda, hashcat, nvidia, nvidia-utils, nvidia-lts]
+      intel: [
+          intel-media-driver,
+          libva-intel-driver,
+          vulkan-intel,
+          mesa,
+          # lib32-vulkan-intel,
+        ]
+      gui:
+        [
+          noto-fonts,
+          noto-fonts-cjk,
+          noto-fonts-extra,
+          noto-fonts-emoji,
+          xorg-server,
+          lightdm,
+          lightdm-gtk-greeter,
+          i3-wm,
+          i3status,
+          i3status-rust,
+          alacritty,
+          dmenu,
+          dex,
+          xss-lock,
+          i3lock,
+          libnotify,
+          arandr,
+          xorg-xrandr,
+          pipewire-jack,
+          firefox,
+          qbittorrent,
+          network-manager-applet,
+          xorg-xset,
+          xorg-xsetroot,
+        ]
+      vm: [spice-vdagent, qemu-guest-agent]
+  tasks:
+    - name: install essential packages (takes a while)
+      community.general.pacman:
+        name: "{{ packages.essential }}"
+    - name: install useful packages
+      community.general.pacman:
+        name: "{{ packages.useful }}"
+    - name: install network packages
+      community.general.pacman:
+        name: "{{ packages.network }}"
+      when:
+    - name: install nvidia packages (takes a while; around 6gb)
+      when: include.nvidia_graphics
+      community.general.pacman:
+        name: "{{ packages.nvidia }}"
+      register: output_nvidia
+    - debug:
+        var: output_nvidia
+    - name: install intel packages
+      when: include.intel_graphics
+      community.general.pacman:
+        name: "{{ packages.intel }}"
+      register: output_intel
+    - debug:
+        var: output_intel
+    - name: install gui packages (takes a while; 2G)
+      when: include.gui
+      community.general.pacman:
+        name: "{{ packages.gui }}"
+      register: output_gui
+    - debug:
+        var: output_gui
+    - name: install vm packages
+      when: inside_vm
+      community.general.pacman:
+        name: "{{ packages.vm }}"
+    - name: softlink time zone
+      ansible.builtin.file:
+        src: /usr/share/zoneinfo/US/Pacific
+        dest: /etc/localtime
+        state: link
+    - name: hwclock --systohc
+      ansible.builtin.shell: "hwclock --systohc"
+    - name: set locale
+      community.general.locale_gen:
+        name: en_US.UTF-8
+        state: present
+    - name: set hostname
+      ansible.builtin.copy:
+        content: "arch-vm"
+        dest: /etc/hostname
+    - name: set mkinitcpio.conf HOOKS param
+      ansible.builtin.copy:
+        content: "HOOKS=(base systemd udev autodetect microcode modconf kms keyboard keymap consolefont block lvm2 filesystems fsck)"
+        dest: /etc/mkinitcpio.conf.d/00_hooks.conf
+    - name: mkinitcpio -P
+      ansible.builtin.shell:
+        cmd: "mkinitcpio -P"
+    - name: setup grub
+      include_role:
+        name: grub
+    - name: set root password
+      ansible.builtin.shell:
+        cmd: echo {{ root_password }} | passwd --stdin root
+    - name: create user to login
+      ansible.builtin.user:
+        name: student
+        shell: /bin/zsh
+        groups: wheel
+        append: True
+        create_home: True
+    - name: set password for the login user
+      ansible.builtin.shell:
+        cmd: echo {{ user_password }} | passwd --stdin student
+    - name: allow members of group wheel to execute any command
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: "^%wheel"
+        line: "%wheel ALL=(ALL:ALL) ALL"
+        validate: "/usr/sbin/visudo -cf %s"
+    - name: enable NetworkManager service
+      ansible.builtin.systemd_service:
+        enabled: true
+        name: NetworkManager
+    - name: enable sshd service
+      ansible.builtin.systemd_service:
+        enabled: true
+        name: sshd
+    - name: enable systemd-timesyncd service
+      ansible.builtin.systemd_service:
+        enabled: true
+        name: systemd-timesyncd
+    - name: enable lightdm service
+      when: include.gui
+      ansible.builtin.systemd_service:
+        enabled: true
+        name: lightdm
+    - name: set EDITOR env variable
+      ansible.builtin.lineinfile:
+        path: /etc/profile
+        regexp: "^export EDITOR=(.*)$"
+        line: "export EDITOR='nvim'"
+    - name: set VISUAL env variable
+      ansible.builtin.lineinfile:
+        path: /etc/profile
+        regexp: "^export VISUAL=(.*)$"
+        line: "export VISUAL='nvim'"
+    - name: set vim alias to nvim
+      ansible.builtin.lineinfile:
+        path: /etc/profile
+        regexp: "^alias vim=(.*)$"
+        line: "alias vim='nvim'"
+    - name: alias vim to nvim for login user
+      ansible.builtin.lineinfile:
+        path: /home/student/.zshrc
+        line: "alias vim='nvim'"
+    - name: set content of .xsession file
+      when: inside_vm
+      ansible.builtin.copy:
+        content: "{{ xsession_content }}"
+        dest: /home/student/.xsession
+    - name: make .xsession file executable
+      when: inside_vm
+      ansible.builtin.file:
+        path: /home/student/.xsession
+        mode: '0744'

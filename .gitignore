@@ -1,0 +1,4 @@
+/.venv/
+/.vault_password
+/group_vars/all.yml
+/inventory.ini

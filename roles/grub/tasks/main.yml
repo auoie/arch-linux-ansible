@@ -1,0 +1,26 @@
+- name: grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+  ansible.builtin.shell:
+    cmd: "grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB"
+- name: set GRUB_DEFAULT=saved
+  ansible.builtin.lineinfile:
+    path: /etc/default/grub
+    regexp: "^GRUB_DEFAULT=(.*)$"
+    line: GRUB_DEFAULT=saved
+- name: set GRUB_SAVEDEFAULT=true
+  ansible.builtin.lineinfile:
+    path: /etc/default/grub
+    regexp: "^GRUB_SAVEDEFAULT=(.*)$"
+    line: GRUB_SAVEDEFAULT=true
+- name: set GRUB_CMDLINE_LINUX
+  ansible.builtin.lineinfile:
+    path: /etc/default/grub
+    regexp: "^GRUB_CMDLINE_LINUX=(.*)$"
+    line: GRUB_CMDLINE_LINUX="root=/dev/myvg/myroot"
+- name: set GRUB_CMDLINE_LINUX_DEFAULT
+  ansible.builtin.lineinfile:
+    path: /etc/default/grub
+    regexp: "^GRUB_CMDLINE_LINUX_DEFAULT=(.*)$"
+    line: GRUB_CMDLINE_LINUX_DEFAULT="root=/dev/myvg/myroot iommu=pt"
+- name: grub-mkconfig -o /boot/grub/grub.cfg
+  ansible.builtin.shell:
+    cmd: grub-mkconfig -o /boot/grub/grub.cfg

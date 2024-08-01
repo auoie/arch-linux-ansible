@@ -1,0 +1,78 @@
+- name: create efi partition
+  community.general.parted:
+    device: "/dev/vda"
+    label: "gpt"
+    number: 1
+    fs_type: "fat32"
+    part_end: "1GiB"
+    state: present
+- name: set efi file system
+  community.general.filesystem:
+    fstype: vfat
+    dev: /dev/vda1
+- name: create partition for LVM
+  community.general.parted:
+    device: "/dev/vda"
+    label: "gpt"
+    part_start: "1GiB"
+    number: 2
+    state: present
+- name: task for creating volume group
+  community.general.lvg:
+    vg: myvg
+    pvs: /dev/vda2
+- name: create swap logical volume
+  community.general.lvol:
+    vg: myvg
+    lv: myswap
+    size: 2g
+    resizefs: true
+- name: set swap volume file system
+  community.general.filesystem:
+    fstype: swap
+    dev: /dev/myvg/myswap
+- name: create root logical volume
+  community.general.lvol:
+    vg: myvg
+    lv: myroot
+    size: "+100%FREE"
+    resizefs: true
+- name: set root volume file system
+  community.general.filesystem:
+    fstype: ext4
+    dev: /dev/myvg/myroot
+- name: make sure boot volume is unmounted
+  ansible.posix.mount:
+    path: /mnt/boot
+    state: unmounted
+- name: make sure root volume is unmounted
+  ansible.posix.mount:
+    path: /mnt
+    state: unmounted
+- name: resize it to have 256MB free
+  community.general.lvol:
+    vg: myvg
+    lv: myroot
+    size: -256M
+    force: true
+    resizefs: true
+- name: mount root volume
+  ansible.posix.mount:
+    path: /mnt
+    src: /dev/myvg/myroot
+    state: mounted
+    fstype: ext4
+# - name: create boot mount point
+#   ansible.builtin.file:
+#     path: /mnt/boot
+#     state: directory
+- name: mount efi volume
+  ansible.posix.mount:
+    path: /mnt/boot
+    src: /dev/vda1
+    state: mounted
+    fstype: vfat
+- name: turn on swap
+  ansible.builtin.shell:
+    cmd: "swapon /dev/myvg/myswap"
+  ignore_errors: true

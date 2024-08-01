@@ -1,0 +1,6 @@
+- name: run pacstrap on /mnt (takes a while)
+  ansible.builtin.shell:
+    cmd: "pacstrap -K /mnt base linux linux-firmware python3"
+- name: create fstab
+  ansible.builtin.shell:
+    cmd: "genfstab -U /mnt > /mnt/etc/fstab"
