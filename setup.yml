@@ -234,4 +234,6 @@
       when: inside_vm
       ansible.builtin.file:
         path: /home/student/.xsession
+        owner: student
+        group: student
         mode: '0744'
