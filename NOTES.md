@@ -14,3 +14,6 @@ They use `mitogen_linear` which makes ansible faster.
 ### Todo
 
 - Should probably randomize the mirrorlist so that I don't get rate limited. For now, I turned on a VPN.
+- Make it work with an NVME drive. Right now it does `{{ disk_name }}1` to get the first partition.
+  For example, the disk name might be `sda` and the partition name would be `sda1`.
+  But with NVME, the dist name is `nvme0n1` and the partition name is `nvme0n1p1`.
